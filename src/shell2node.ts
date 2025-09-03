@@ -30,7 +30,7 @@ if (argv.length === 0 || argv[0] !== 'capture') usageAndExit();
 	const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'shell2node-'));
 	const logFile = path.join(tmpRoot, 'commands.log');
 	const markerFile = path.join(tmpRoot, '.save_marker');
-	// const metaFile = path.join(tmpRoot, "meta.json");
+
 	fs.writeFileSync(logFile, '', 'utf8');
 
 	printHelpMessage(tmpRoot);
