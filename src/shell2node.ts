@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * shell2node MLP - capture mode (bash)
+ * shell2node MLP - capture mode (bash + zsh)
  *
  * Usage:
  *   shell2node capture            # enters capture mode (interactive shell)
@@ -9,23 +9,18 @@
  *   shell2node save               # inside capture shell: save and exit -> generates script
  *   shell2node cancel             # inside capture shell: cancel capture and exit
  *
- * Notes:
- *  - This MLP captures the raw commands (timestamp + command).
- *  - Currently supports bash (via a temporary --rcfile). zsh support is noted later.
+ * *Notes:
+ *  - Supports bash via a temporary --rcfile and zsh via a temporary ZDOTDIR/.zshrc.
+ *  - Captures the raw commands (timestamp + command). Does NOT capture output in this MLP.
  *  - The generated script simply replays commands via `sh -c "<command>"` to preserve semantics.
  */
 
-import { spawn } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { printHelpMessage } from './utils';
-import { generateRcContent } from './utils/constants';
-
-function usageAndExit() {
-	console.log('Usage: shell2node capture');
-	process.exit(1);
-}
+import { printHelpMessage, usageAndExit } from './utils';
+import { generateBashRcContent, generateZshRcContent } from './utils/rcContent';
 
 const argv = process.argv.slice(2);
 if (argv.length === 0 || argv[0] !== 'capture') usageAndExit();
@@ -45,29 +40,58 @@ if (argv.length === 0 || argv[0] !== 'capture') usageAndExit();
 	// - uses a DEBUG trap to append each command
 	// - defines shell2node() function for save/cancel
 	// - slightly changes PS1 so user knows they're in capture mode
-	const rcPath = path.join(tmpRoot, 'capture_rc.sh');
-	const rcContent = generateRcContent(logFile, markerFile);
+	const bashRcPath = path.join(tmpRoot, 'capture_rc.sh');
+	const bashRcContent = generateBashRcContent(logFile, markerFile);
 
-	fs.writeFileSync(rcPath, rcContent, { encoding: 'utf8', mode: 0o600 });
+	const zshRcPath = path.join(tmpRoot, '.zshrc'); // we'll set ZDOTDIR to tmpRoot
+	const zshRcContent = generateZshRcContent(logFile, markerFile);
 
-	// Find user's shell; default to bash
+	fs.writeFileSync(bashRcPath, bashRcContent, {
+		encoding: 'utf8',
+		mode: 0o600,
+	});
+
+	fs.writeFileSync(zshRcPath, zshRcContent, {
+		encoding: 'utf8',
+		mode: 0o600,
+	});
+
+	// Find user's shell
 	const userShell = process.env.SHELL || '/bin/bash';
-	const shellBase = path.basename(userShell);
+	const shellBase = path.basename(userShell).toLowerCase();
 
-	if (!shellBase.includes('bash')) {
-		console.warn(
-			`Warning: detected shell '${shellBase}'. This MLP currently supports bash best. Trying to run ${userShell} but capturing may not work as expected.`,
+	let child: ChildProcess;
+	// Choose spawn strategy
+	if (shellBase.includes('zsh')) {
+		// For zsh: set ZDOTDIR to tmpRoot so zsh will load tmpRoot/.zshrc as if it were ~/.zshrc
+		const env = Object.assign({}, process.env, { ZDOTDIR: tmpRoot });
+		console.log(
+			'Detected zsh: launching an interactive zsh with temporary .zshrc.',
 		);
+		// spawn zsh interactive; it will source $ZDOTDIR/.zshrc
+		child = spawn(userShell, ['-i'], { stdio: 'inherit', env });
+	} else if (shellBase.includes('bash')) {
+		// For bash: use --rcfile to load our temp rc
+		console.log(
+			'Detected bash: launching an interactive bash with temporary rcfile.',
+		);
+		child = spawn(userShell, ['--rcfile', bashRcPath, '-i'], {
+			stdio: 'inherit',
+		});
+	} else {
+		// Fallback: try bash by default but warn user
+		console.warn(
+			`Warning: detected shell '${shellBase}'. This MLP supports bash and zsh best. Trying to spawn ${userShell} but capture may not work.`,
+		);
+		// try to spawn the detected shell with a minimal attempt: for bash-like shells we can try --rcfile, else just -i
+		if (userShell.includes('bash')) {
+			child = spawn(userShell, ['--rcfile', bashRcPath, '-i'], {
+				stdio: 'inherit',
+			});
+		} else {
+			child = spawn(userShell, ['-i'], { stdio: 'inherit' });
+		}
 	}
-
-	// Spawn an interactive bash that uses our rcfile
-	// Use --noprofile --norc to avoid conflicting startup files, then source the capture rc inside.
-	// Simpler: use `bash --rcfile <rcPath> -i` so our rc gets used.
-	const shellCmd = userShell.includes('bash')
-		? ['--rcfile', rcPath, '-i']
-		: ['-i'];
-
-	const child = spawn(userShell, shellCmd, { stdio: 'inherit' });
 
 	child.on('exit', (code: any, signal: any) => {
 		console.log(`\nCapture shell exited (code=${code} signal=${signal}).`);
@@ -98,6 +122,7 @@ if (argv.length === 0 || argv[0] !== 'capture') usageAndExit();
 				const cmd = line.slice(idx + 1);
 				return { ts, cmd };
 			})
+			// Filter out internal marker-commands or the user calling 'shell2node save' / 'shell2node cancel'
 			.filter((e: any) => e.cmd && !e.cmd.startsWith('shell2node')); // filter out the internal 'shell2node' calls
 
 		if (entries.length === 0) {

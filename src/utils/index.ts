@@ -31,3 +31,8 @@ export const printHelpMessage = (tmpRoot: string) => {
 	);
 	console.log('');
 };
+
+export const usageAndExit = () => {
+	console.log('Usage: shell2node capture');
+	process.exit(1);
+};
