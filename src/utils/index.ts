@@ -26,8 +26,8 @@ export const printHelpMessage = (tmpRoot: string) => {
 	console.log(
 		`Press ${styleText(['bold', 'yellow'], 'Ctrl+D')}  or type ${styleText(
 			['bold', 'yellow'],
-			'Ctrl+D',
-		)} exit if you want to quit without saving (use shell2node save to save).`,
+			'exit',
+		)} if you want to quit without saving (use shell2node save to save).`,
 	);
 	console.log('');
 };

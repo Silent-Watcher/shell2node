@@ -1,6 +1,6 @@
 {
 	"name": "shell2node",
-	"version": "0.9.0",
+	"version": "0.9.1",
 	"type": "module",
 	"main": "bin/shell2node.js",
 	"bin": {
