@@ -36,7 +36,7 @@ npm install -g shell2node
 - 📁 **Automatic Organization** - Saves generated scripts with timestamps and metadata
 - 🛡️ **Safe Execution** - Includes proper error handling and exit code propagation
 
-## Quick Start
+## Usage
 
 1. Start capture mode:
 ```bash
